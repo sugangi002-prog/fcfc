@@ -1,0 +1,22 @@
+name: Update Streamers Squad Value
+
+on:
+  workflow_dispatch: 
+
+jobs:
+  run-scraper:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🛎️ Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: ⚙️ Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: 📦 Install Puppeteer
+        run: npm install puppeteer
+
+      - name: 🚀 Run Squad Value Scraper
+        run: node get_squad_value.js
