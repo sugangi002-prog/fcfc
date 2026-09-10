@@ -40,16 +40,38 @@ async function updateAllSquadValues() {
             const popupId = streamer.profile_popup_id;
             let updateData = {};
 
-            // 1. 스쿼드 팝업 페이지 접속
-            const squadUrl = `https://fconline.nexon.com/profile/squad/popup/${popupId}`;
-            console.log(`👉 [${streamer.streamer_name}] 스쿼드 페이지 접속 중...`);
+            // 1. 스쿼드 팝업 대신 '구단주 팝업 페이지' 접속
+            const ownerUrl = `https://fconline.nexon.com/profile/owner/popup/${popupId}`;
+            console.log(`👉 [${streamer.streamer_name}] 구단주 페이지 접속 중...`);
 
             try {
-                await page.goto(squadUrl, { waitUntil: 'networkidle2', timeout: 20000 });
-                await page.waitForSelector('.squad__info-panel__price .sum_main strong', { timeout: 10000 });
+                await page.goto(ownerUrl, { waitUntil: 'networkidle2', timeout: 20000 });
+                await new Promise(resolve => setTimeout(resolve, 2000));
 
-                // 구단 가치 추출
-                const squadValue = await page.$eval('.squad__info-panel__price .sum_main strong', el => el.textContent.trim());
+                // 구단 가치 추출 (구단주 페이지 내 '구단가치' 텍스트 및 금액 파싱)
+                const squadValue = await page.evaluate(() => {
+                    const allElements = Array.from(document.querySelectorAll('span, div, p, dt, dd, strong, th, td'));
+                    const target = allElements.find(el => el.textContent.includes('구단가치') && el.textContent.length < 50);
+                    
+                    if (target) {
+                        let text = target.textContent;
+                        let cleaned = text
+                            .replace(/구단가치/g, '')
+                            .replace(/※.*$/g, '')
+                            .replace(/:/g, '')
+                            .trim();
+                        if (cleaned.length > 0) return cleaned;
+                    }
+
+                    // 대체 셀렉터 탐색
+                    const priceEl = document.querySelector('.stadium_info_v2, .val, .price, span[class*="value"]');
+                    if (priceEl) {
+                        return priceEl.textContent.trim();
+                    }
+
+                    return "정보 없음";
+                });
+
                 updateData.squad_value = squadValue;
                 console.log(`    └ 💰 구단 가치: ${squadValue}`);
 
@@ -143,7 +165,7 @@ async function updateAllSquadValues() {
                 }
 
             } catch (err) {
-                console.error(`    └ ❌ 스쿼드 페이지 파싱/캡처 오류:`, err.message);
+                console.error(`    └ ❌ 구단주 페이지 파싱/캡처 오류:`, err.message);
             }
 
             // 2. 경기 기록(Stat) 팝업 페이지 접속 (현재 시즌 / 지난 시즌 구분 파싱 적용)
@@ -226,3 +248,4 @@ async function updateAllSquadValues() {
 }
 
 updateAllSquadValues();
+```[cite: 1]
