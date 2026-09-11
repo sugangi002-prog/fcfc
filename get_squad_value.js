@@ -40,37 +40,20 @@ async function updateAllSquadValues() {
             const popupId = streamer.profile_popup_id;
             let updateData = {};
 
-            // 1. 구단주 팝업 페이지 접속 (전일 자정 기준 구단 가치 추출용)
-            const ownerUrl = `https://fconline.nexon.com/profile/owner/popup/${popupId}`;
-            console.log(`👉 [${streamer.streamer_name}] 구단주 페이지 접속 중...`);
+            // 1. 스쿼드 팝업 페이지 접속
+            const squadUrl = `https://fconline.nexon.com/profile/squad/popup/${popupId}`;
+            console.log(`👉 [${streamer.streamer_name}] 스쿼드 페이지 접속 중...`);
 
             try {
-                await page.goto(ownerUrl, { waitUntil: 'networkidle2', timeout: 20000 });
-                await new Promise(resolve => setTimeout(resolve, 2000));
+                await page.goto(squadUrl, { waitUntil: 'networkidle2', timeout: 20000 });
+                await page.waitForSelector('.squad__info-panel__price .sum_main strong', { timeout: 10000 });
 
-                // 구단 가치 추출
-                const squadValue = await page.evaluate(() => {
-                    const allElements = Array.from(document.querySelectorAll('span, div, p, dt, dd, strong, th, td'));
-                    const target = allElements.find(el => el.textContent.includes('구단가치') && el.textContent.length < 50);
-                    
-                    if (target) {
-                        let text = target.textContent;
-                        let cleaned = text
-                            .replace(/구단가치/g, '')
-                            .replace(/※.*$/g, '')
-                            .replace(/:/g, '')
-                            .trim();
-                        if (cleaned.length > 0) return cleaned;
-                    }
-
-                    const priceEl = document.querySelector('.stadium_info_v2, .val, .price, span[class*="value"]');
-                    if (priceEl) {
-                        return priceEl.textContent.trim();
-                    }
-
-                    return "정보 없음";
+                // 구단 가치 추출 (기존 셀렉터에서 텍스트를 가져온 뒤 공백 및 불필요한 문자 정리)
+                const squadValue = await page.$eval('.squad__info-panel__price .sum_main strong', el => {
+                    let text = el.textContent.trim();
+                    // 혹시 포함될 수 있는 안내 문구 제거
+                    return text.replace(/※.*$/, '').trim();
                 });
-
                 updateData.squad_value = squadValue;
                 console.log(`    └ 💰 구단 가치: ${squadValue}`);
 
@@ -83,10 +66,11 @@ async function updateAllSquadValues() {
                 updateData.control_type = controlType;
                 console.log(`    └ 🎮 조작 타입: ${controlType}`);
 
-                // 스크린샷 캡처 전 스크롤 및 체크박스 클릭
+                // 💡 [순서 1] 스크린샷 캡처 전, 휠 5번(약 500px)만큼 먼저 스크롤 내리기
                 await page.evaluate(() => window.scrollBy(0, 500));
                 await new Promise(resolve => setTimeout(resolve, 500));
 
+                // 💡 [순서 2] 스크롤을 내린 상태에서 '카드 배경 숨기기' 체크박스 강제 클릭
                 await page.evaluate(() => {
                     const labels = Array.from(document.querySelectorAll('label'));
                     const targetLabel = labels.find(label => label.textContent.includes('카드 배경 숨기기'));
@@ -112,10 +96,11 @@ async function updateAllSquadValues() {
 
                 await new Promise(resolve => setTimeout(resolve, 1500));
 
+                // 💡 [순서 3] 스크롤(500) + 상단 여백(118)을 반영한 완벽한 clip 좌표 캡처
                 const screenshotBuffer = await page.screenshot({
                     clip: {
                         x: 0,
-                        y: 618,
+                        y: 618,      // 500 (스크롤) + 118 (버릴 상단 높이)
                         width: 1280,
                         height: 782
                     }
@@ -125,6 +110,7 @@ async function updateAllSquadValues() {
 
                 console.log(`    └ 🚀 구글 드라이브로 이미지 업로드 중...`);
                 
+                // 구글 서버 과부하 방지 및 재시도(Retry) 로직
                 let uploadResult = { status: 'error' };
                 let retryCount = 0;
                 const maxRetries = 3;
@@ -161,10 +147,10 @@ async function updateAllSquadValues() {
                 }
 
             } catch (err) {
-                console.error(`    └ ❌ 구단주 페이지 파싱/캡처 오류:`, err.message);
+                console.error(`    └ ❌ 스쿼드 페이지 파싱/캡처 오류:`, err.message);
             }
 
-            // 2. 경기 기록(Stat) 팝업 페이지 접속
+            // 2. 경기 기록(Stat) 팝업 페이지 접속 (현재 시즌 / 지난 시즌 구분 파싱 적용)
             const statUrl = `https://fconline.nexon.com/profile/stat/popup/${popupId}`;
             console.log(`👉 [${streamer.streamer_name}] 전적 페이지 접속 중...`);
 
@@ -186,6 +172,7 @@ async function updateAllSquadValues() {
                     };
                 });
 
+                // 동일하게 가져와질 경우의 보완 파싱 로직
                 if (stats.current === stats.last) {
                     const fallbackStats = await page.evaluate(() => {
                         const boxes = Array.from(document.querySelectorAll('.rank_view, .stadium_info_v2, div[class*="record"]'));
@@ -230,6 +217,7 @@ async function updateAllSquadValues() {
                 }
             }
 
+            // 다음 스트리머로 넘어가기 전 3초간 휴식 (과부하 방지)
             await new Promise(resolve => setTimeout(resolve, 3000));
         }
 
